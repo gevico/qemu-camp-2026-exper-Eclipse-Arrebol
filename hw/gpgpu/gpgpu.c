@@ -21,6 +21,7 @@
 
 #include "gpgpu.h"
 #include "gpgpu_core.h"
+#include <stdint.h>
 
 /* TODO: Implement MMIO control register read */
 static uint64_t gpgpu_ctrl_read(void *opaque, hwaddr addr, unsigned size)
@@ -40,6 +41,18 @@ static uint64_t gpgpu_ctrl_read(void *opaque, hwaddr addr, unsigned size)
             return s->global_status;
         case GPGPU_REG_GLOBAL_CTRL:
             return s->global_ctrl;
+        case GPGPU_REG_GRID_DIM_X:
+            return s->kernel.grid_dim[0];
+        case GPGPU_REG_GRID_DIM_Y:
+            return s->kernel.grid_dim[1];
+        case GPGPU_REG_GRID_DIM_Z:
+            return s->kernel.grid_dim[2];
+        case GPGPU_REG_BLOCK_DIM_X:
+            return s->kernel.block_dim[0];
+        case GPGPU_REG_BLOCK_DIM_Y:
+            return s->kernel.block_dim[1];
+        case GPGPU_REG_BLOCK_DIM_Z:
+            return s->kernel.block_dim[2];
         default:
             return 0;
     }
@@ -57,10 +70,29 @@ static void gpgpu_ctrl_write(void *opaque, hwaddr addr, uint64_t val,
         case GPGPU_REG_GLOBAL_CTRL:
             s->global_ctrl = val;
             break;
-        
+        case GPGPU_REG_GRID_DIM_X:
+            s->kernel.grid_dim[0] = val;
+            break;
+        case GPGPU_REG_GRID_DIM_Y:
+            s->kernel.grid_dim[1] = val;
+            break;
+        case GPGPU_REG_GRID_DIM_Z:
+            s->kernel.grid_dim[2] = val;
+            break;
+        case GPGPU_REG_BLOCK_DIM_X:
+            s->kernel.block_dim[0] = val;
+            break;
+        case GPGPU_REG_BLOCK_DIM_Y:
+            s->kernel.block_dim[1] = val;
+            break;
+        case GPGPU_REG_BLOCK_DIM_Z:
+            s->kernel.block_dim[2] = val;
+            break;
+        default:
+            break;
     }
     
-    (void)val;
+    
     (void)size;
 }
 
@@ -77,20 +109,21 @@ static const MemoryRegionOps gpgpu_ctrl_ops = {
 /* TODO: Implement VRAM read */
 static uint64_t gpgpu_vram_read(void *opaque, hwaddr addr, unsigned size)
 {
-    (void)opaque;
-    (void)addr;
-    (void)size;
-    return 0;
+    GPGPUState *s = opaque;
+    uint64_t val=0;
+    memcpy(&val, s->vram_ptr + addr, size);
+    
+    
+    return val;
 }
 
 /* TODO: Implement VRAM write */
 static void gpgpu_vram_write(void *opaque, hwaddr addr, uint64_t val,
                              unsigned size)
 {
-    (void)opaque;
-    (void)addr;
-    (void)val;
-    (void)size;
+    GPGPUState *s = opaque;
+    memcpy(s->vram_ptr + addr, &val,size);
+
 }
 
 static const MemoryRegionOps gpgpu_vram_ops = {
