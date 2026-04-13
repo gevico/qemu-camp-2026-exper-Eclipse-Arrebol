@@ -25,8 +25,21 @@
 /* TODO: Implement MMIO control register read */
 static uint64_t gpgpu_ctrl_read(void *opaque, hwaddr addr, unsigned size)
 {
+    GPGPUState *s = opaque;
+    switch (addr) 
+    {
+        case GPGPU_REG_DEV_ID:
+            return GPGPU_DEV_ID_VALUE;
+        case GPGPU_REG_DEV_VERSION:
+            return  GPGPU_DEV_VERSION_VALUE;
+        case GPGPU_REG_VRAM_SIZE_LO:
+            return s->vram_size&0xFFFFFFFF;
+        case GPGPU_REG_VRAM_SIZE_HI:
+            return s->vram_size>>32;
+        default:
+            return 0;
+    }
     (void)opaque;
-    (void)addr;
     (void)size;
     return 0;
 }
