@@ -102,6 +102,8 @@ static void gpgpu_ctrl_write(void *opaque, hwaddr addr, uint64_t val,
     switch (addr) {
         case GPGPU_REG_GLOBAL_CTRL:
             s->global_ctrl = val;
+            if(val&GPGPU_CTRL_RESET)
+                device_cold_reset(DEVICE(s));          
             break;
         case GPGPU_REG_GRID_DIM_X:
             s->kernel.grid_dim[0] = val;
@@ -169,6 +171,16 @@ static void gpgpu_ctrl_write(void *opaque, hwaddr addr, uint64_t val,
         case GPGPU_REG_THREAD_MASK:
             s->simt.thread_mask = val&0xffffffff;
             break;
+        case GPGPU_REG_KERNEL_ADDR_LO:
+            s->kernel.kernel_addr = (s->kernel.kernel_addr & 0xFFFFFFFF00000000ULL) | val;
+            break;
+        case GPGPU_REG_KERNEL_ADDR_HI:
+            s->kernel.kernel_addr = (s->kernel.kernel_addr & 0xFFFFFFFF) | ((uint64_t)val << 32);
+            break;
+        case GPGPU_REG_DISPATCH:
+            gpgpu_core_exec_kernel(s);
+            break;
+        
         default:
             break;
     }
