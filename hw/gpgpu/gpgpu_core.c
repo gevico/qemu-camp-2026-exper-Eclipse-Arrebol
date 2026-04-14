@@ -6,13 +6,126 @@
  * This work is licensed under the terms of the GNU GPL, version 2 or later.
  * See the COPYING file in the top-level directory.
  */
-#include "qemu/osdep.h"
-#include "qemu/log.h"
-#include "gpgpu.h"
 #include "gpgpu_core.h"
+#include "gpgpu.h"
+#include "qemu/log.h"
+#include "qemu/osdep.h"
+#include <stdint.h>
 
+static inline float u32_to_float(uint32_t v) {
+  union {
+    uint32_t u;
+    float f;
+  } x = {.u = v};
+  return x.f;
+}
 
+static inline uint32_t float_to_u32(float v) {
+  union {
+    uint32_t u;
+    float f;
+  } x = {.f = v};
+  return x.u;
+}
 
+static uint8_t f32_to_e4m3(uint32_t f32) {
+  uint32_t sign = (f32 >> 31) & 0x1;
+  int32_t fp32_exp = (f32 >> 23) & 0xFF;
+  uint32_t mant = (f32 >> 20) & 0x7; // 尾数高3位
+
+  int32_t e4m3_exp = fp32_exp - 120; // rebias
+
+  // 处理边界
+  if (e4m3_exp <= 0)
+    return (sign << 7); // 下溢，返回±0
+  if (e4m3_exp > 15)
+    e4m3_exp = 15; // 上溢，钳位到最大
+
+  return (uint8_t)((sign << 7) | (e4m3_exp << 3) | mant);
+}
+
+static uint8_t f32_to_e5m2(uint32_t f32) {
+  uint32_t sign = (f32 >> 31) & 0x1;
+  int32_t fp32_exp = (f32 >> 23) & 0xFF;
+  uint32_t mant = (f32 >> 21) & 0x3; // 尾数高3位
+
+  int32_t e4m3_exp = fp32_exp - 112; // rebias
+
+  // 处理边界
+  if (e4m3_exp <= 0)
+    return (sign << 7); // 下溢，返回±0
+  if (e4m3_exp > 31)
+    e4m3_exp = 31; // 上溢，钳位到最大
+
+  return (uint8_t)((sign << 7) | (e4m3_exp << 2) | mant);
+}
+
+static uint8_t f32_to_e2m1(uint32_t f32) {
+  uint32_t sign = (f32 >> 31) & 0x1;
+  int32_t fp32_exp = (f32 >> 23) & 0xFF;
+  uint32_t mant = (f32 >> 22) & 0x1; // 尾数高3位
+
+  int32_t e4m3_exp = fp32_exp - 126; // rebias
+
+  // 处理边界
+  if (e4m3_exp <= 0)
+    return (sign << 7); // 下溢，返回±0
+  if (e4m3_exp > 3)
+    e4m3_exp = 3; // 上溢，钳位到最大
+
+  return (uint8_t)((sign << 7) | (e4m3_exp << 1) | mant);
+}
+
+static uint32_t e4m3_to_f32(uint8_t u8) {
+  uint32_t sign = (u8 >> 7) & 0x1;
+  int32_t fp8_exp = (u8 >> 3) & 0xF;
+  uint32_t mant = u8 & 0x7;
+
+  // 零值
+  if (fp8_exp == 0 && mant == 0)
+    return sign << 31;
+
+  int32_t f32_exp = fp8_exp + 120; // rebias
+
+  if (f32_exp > 255)
+    f32_exp = 255; // 上溢钳位
+
+  return (sign << 31) | ((uint32_t)f32_exp << 23) | (mant << 20);
+}
+
+static uint32_t e2m1_to_f32(uint8_t u8) {
+  uint32_t sign = (u8 >> 3) & 0x1;
+  int32_t fp8_exp = (u8 >> 1) & 0x3;
+  uint32_t mant = u8 & 0x1;
+
+  // 零值
+  if (fp8_exp == 0 && mant == 0)
+    return sign << 31;
+
+  int32_t f32_exp = fp8_exp + 126; // rebias
+
+  if (f32_exp > 255)
+    f32_exp = 255; // 上溢钳位
+
+  return (sign << 31) | ((uint32_t)f32_exp << 23) | (mant << 22);
+}
+
+static uint32_t e5m2_to_f32(uint8_t u8) {
+  uint32_t sign = (u8 >> 7) & 0x1;
+  int32_t fp8_exp = (u8 >> 2) & 0x1F;
+  uint32_t mant = u8 & 0x3;
+
+  // 零值
+  if (fp8_exp == 0 && mant == 0)
+    return sign << 31;
+
+  int32_t f32_exp = fp8_exp + 112; // rebias
+
+  if (f32_exp > 255)
+    f32_exp = 255; // 上溢钳位
+
+  return (sign << 31) | ((uint32_t)f32_exp << 23) | (mant << 21);
+}
 
 /* TODO: Implement warp initialization */
 void gpgpu_core_init_warp(GPGPUWarp *warp, uint32_t pc, uint32_t thread_id_base,
@@ -66,6 +179,7 @@ int gpgpu_core_exec_warp(GPGPUState *s, GPGPUWarp *warp, uint32_t max_cycles) {
 
       // 执行
       switch (opcode) {
+
       case 0x73:                  // csrrs / ebreak
         if (insn == 0x00100073) { // ebreak
           warp->active_mask &= ~(1u << i);
@@ -83,6 +197,9 @@ int gpgpu_core_exec_warp(GPGPUState *s, GPGPUWarp *warp, uint32_t max_cycles) {
         switch (funct3) {
         case 0x7: // andi
           lane->gpr[rd] = lane->gpr[rs1] & imm_i;
+          break;
+        case 0x0: // addi
+          lane->gpr[rd] = lane->gpr[rs1] + imm_i;
           break;
         case 0x1: // slli
           lane->gpr[rd] = lane->gpr[rs1] << rs2;
@@ -104,8 +221,64 @@ int gpgpu_core_exec_warp(GPGPUState *s, GPGPUWarp *warp, uint32_t max_cycles) {
         if (funct3 == 0x2) { // sw
           // TODO: addr = rs1 + imm_s, 写 vram
           uint32_t addr = lane->gpr[rs1] + imm_s;
+          fprintf(stderr, "sw: rs1=x%d(%u) rs2=x%d(%u) addr=0x%x\n", rs1,
+                  lane->gpr[rs1], rs2, lane->gpr[rs2], addr);
           *(uint32_t *)(s->vram_ptr + addr) = lane->gpr[rs2];
         }
+        break;
+
+      case 0x53:
+        fprintf(stderr, "FP insn: funct7=0x%02x rd=%d rs1=%d rs2=%d\n", funct7,
+                rd, rs1, rs2);
+        if (funct7 == 0x68) {
+          float result = (float)(int32_t)lane->gpr[rs1];
+          lane->fpr[rd] = float_to_u32(result);
+        }
+        if (funct7 == 0x60) {
+          float val = u32_to_float(lane->fpr[rs1]);
+          lane->gpr[rd] = (int32_t)val;
+        }
+        if (funct7 == 0x00) {
+          float result =
+              u32_to_float(lane->fpr[rs1]) + u32_to_float(lane->fpr[rs2]);
+          lane->fpr[rd] = float_to_u32(result);
+        }
+        if (funct7 == 0x08) {
+          float result =
+              u32_to_float(lane->fpr[rs1]) * u32_to_float(lane->fpr[rs2]);
+          lane->fpr[rd] = float_to_u32(result);
+        }
+        if (funct7 == 0x22) {
+          if (rs2 == 1) {
+            lane->fpr[rd] = lane->fpr[rs1] >> 16;
+          }
+          if (rs2 == 0) { // fcvt.s.bf16
+            lane->fpr[rd] = lane->fpr[rs1] << 16;
+          }
+        }
+        if (funct7 == 0x24) {
+          if (rs2 == 1) {
+            lane->fpr[rd] = (uint32_t)f32_to_e4m3(lane->fpr[rs1]);
+          }
+          if (rs2 == 0) { // fcvt.s.bf16
+            lane->fpr[rd] = e4m3_to_f32((uint8_t)lane->fpr[rs1]);
+          }
+          if (rs2 == 3) { // fcvt.e5m2.s
+            lane->fpr[rd] = (uint32_t)f32_to_e5m2(lane->fpr[rs1]);
+          }
+          if (rs2 == 2) { // fcvt.s.e5m2
+            lane->fpr[rd] = e5m2_to_f32((uint8_t)lane->fpr[rs1]);
+          }
+        }
+        if (funct7 == 0x26) {
+          if (rs2 == 1) { // fcvt.e2m1.s
+            lane->fpr[rd] = (uint32_t)f32_to_e2m1(lane->fpr[rs1]);
+          }
+          if (rs2 == 0) { // fcvt.s.e2m1
+            lane->fpr[rd] = e2m1_to_f32((uint8_t)lane->fpr[rs1]);
+          }
+        }
+
         break;
       }
 
