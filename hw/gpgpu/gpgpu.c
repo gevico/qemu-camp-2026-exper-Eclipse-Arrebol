@@ -179,7 +179,7 @@ static void gpgpu_ctrl_write(void *opaque, hwaddr addr, uint64_t val,
             break;
         case GPGPU_REG_DISPATCH:
             gpgpu_core_exec_kernel(s);
-            break;
+        break;
         
         default:
             break;
