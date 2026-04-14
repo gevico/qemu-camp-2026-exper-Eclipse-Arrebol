@@ -38,8 +38,11 @@ static uint8_t f32_to_e4m3(uint32_t f32) {
   // 处理边界
   if (e4m3_exp <= 0)
     return (sign << 7); // 下溢，返回±0
-  if (e4m3_exp > 15)
-    e4m3_exp = 15; // 上溢，钳位到最大
+                        // 上溢，钳位到最大
+  if (e4m3_exp > 15) {
+    e4m3_exp = 15;
+    mant = 6; // 尾数也要全1
+  }
 
   return (uint8_t)((sign << 7) | (e4m3_exp << 3) | mant);
 }
@@ -70,8 +73,10 @@ static uint8_t f32_to_e2m1(uint32_t f32) {
   // 处理边界
   if (e4m3_exp <= 0)
     return (sign << 7); // 下溢，返回±0
-  if (e4m3_exp > 3)
+  if (e4m3_exp > 3) {
     e4m3_exp = 3; // 上溢，钳位到最大
+    mant = 1;
+  }
 
   return (uint8_t)((sign << 7) | (e4m3_exp << 1) | mant);
 }
@@ -277,6 +282,9 @@ int gpgpu_core_exec_warp(GPGPUState *s, GPGPUWarp *warp, uint32_t max_cycles) {
           if (rs2 == 0) { // fcvt.s.e2m1
             lane->fpr[rd] = e2m1_to_f32((uint8_t)lane->fpr[rs1]);
           }
+        }
+        if (funct7 == 0x78) { // fmv.w.x
+          lane->fpr[rd] = lane->gpr[rs1];
         }
 
         break;
