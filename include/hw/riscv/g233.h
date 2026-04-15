@@ -101,6 +101,7 @@ enum {
     IOMMU_SYS_IRQ = 0x24, /* 36-39 */
     VIRT_PLATFORM_BUS_IRQ = 64, /* 64 to 95 */
     GPIO_IRQ = 2,
+    PWM_IRQ = 3,
 };
 
 #define VIRT_PLATFORM_BUS_NUM_IRQS 32
