@@ -1721,6 +1721,9 @@ static void virt_machine_init(MachineState *machine)
     sysbus_create_simple("g233-pwm", 0x10015000,
     qdev_get_gpio_in(mmio_irqchip, PWM_IRQ));
 
+    sysbus_create_simple("g233-wdt", 0x10010000,
+    qdev_get_gpio_in(mmio_irqchip, WDT_IRQ));
+
     for (i = 0; i < ARRAY_SIZE(s->flash); i++) {
         /* Map legacy -drive if=pflash to machine properties */
         pflash_cfi01_legacy_drive(s->flash[i],
