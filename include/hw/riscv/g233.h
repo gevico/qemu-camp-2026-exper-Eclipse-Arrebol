@@ -102,7 +102,8 @@ enum {
     VIRT_PLATFORM_BUS_IRQ = 64, /* 64 to 95 */
     GPIO_IRQ = 2,
     PWM_IRQ = 3,
-    WDT_IRQ = 4
+    WDT_IRQ = 4,
+    SPI_IRQ = 5
 };
 
 #define VIRT_PLATFORM_BUS_NUM_IRQS 32
